@@ -31,6 +31,9 @@ struct MQTTService: LifecycleHandler {
                     Environment.get("MQTT_HOST") ?? "broker.mqttdashboard.com",
                     port: Int(Environment.get("MQTT_PORT") ?? "1883") ?? 1883
                 ),
+                protocolVersion: .version5,
+                clientId: "tariot-api",
+                clean: true,
                 credentials: .init(
                     username: Environment.get("MQTT_USERNAME") ?? "",
                     password: Environment.get("MQTT_PASSWORD") ?? ""
