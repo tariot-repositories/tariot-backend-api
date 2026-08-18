@@ -32,16 +32,22 @@ struct AlertController: RouteCollection {
     }
 
     // MARK: - Private DTO Mapping
-    private func makeDTO(from alert: Alert) -> AlertDTO {
+    private func makeDTO(
+        from alert: Alert
+    ) -> AlertDTO {
         AlertDTO(
             id: alert.id,
             truckUUID: alert.truckUUID,
             readingID: alert.readingID,
+            readingRecordedAt: alert.readingRecordedAt,
+            deliverySlaveDetectionID: alert.deliverySlaveDetectionID,
+            masterID: alert.masterID,
+            slaveID: alert.slaveID,
             parameter: alert.parameter,
             severity: alert.severity,
             valueAtTrigger: alert.valueAtTrigger,
             message: alert.message,
-            createdAt: alert.createdAt.description
+            createdAt:alert.createdAt
         )
     }
 }

@@ -15,6 +15,9 @@ struct Alert {
     let id: UUID
     let truckUUID: UUID
     let readingID: UUID
+    let deliverySlaveDetectionID: UUID?
+    let masterID: String?
+    let slaveID: String?
     let readingRecordedAt: Date
     let parameter: AlertParameter
     let severity: AlertSeverity
