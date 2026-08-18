@@ -10,3 +10,5 @@ db.sqlite
 .env.*
 !.env.example
 default.profraw
+cold-chain-schema.sql
+production-schema.sql

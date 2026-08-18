@@ -30,7 +30,11 @@ struct MQTTService: LifecycleHandler {
                 target: .host(
                     Environment.get("MQTT_HOST") ?? "broker.mqttdashboard.com",
                     port: Int(Environment.get("MQTT_PORT") ?? "1883") ?? 1883
-                )
+                ),
+                credentials: .init(
+                    username: Environment.get("MQTT_USERNAME") ?? "",
+                    password: Environment.get("MQTT_PASSWORD") ?? ""
+                ),
             ),
             eventLoopGroupProvider: .shared(app.eventLoopGroup)
         )       

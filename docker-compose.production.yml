@@ -1,0 +1,39 @@
+services:
+  app:
+    image: mango-monitor-dashboard-api:latest
+
+    build:
+      context: .
+
+    restart: unless-stopped
+
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-notice}
+
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+
+      MQTT_HOST: ${MQTT_HOST:-broker.mqttdashboard.com}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+
+      ALERT_COOLDOWN_MINUTES: ${ALERT_COOLDOWN_MINUTES:-10}
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    command:
+      [
+        "serve",
+        "--env",
+        "production",
+        "--hostname",
+        "0.0.0.0",
+        "--port",
+        "8080"
+      ]
