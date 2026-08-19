@@ -7,7 +7,7 @@ func configure(_ app: Application) async throws {
     // app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
     let config = PostgresClient.Configuration(
         host: Environment.get("DB_HOST") ?? "127.0.0.1",
-        port: Int(Environment.get("DB_PORT") ?? "5432") ?? 5432,
+        port: Int(Environment.get("DB_PORT") ?? "6543") ?? 6543,
         username: Environment.get("DB_USERNAME") ?? "postgres",
         password: Environment.get("DB_PASSWORD") ?? "password",
         database: Environment.get("DB_NAME") ?? "postgres",

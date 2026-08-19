@@ -105,9 +105,18 @@ struct DeliveryRepository {
             SET status = \(status.rawValue),
                 completed_at = \(completedAt)
             WHERE id = \(id)
-            RETURNING id, truck_id, origin_location, destination_location,
-                      driver_id, assist_driver_id, status,
-                      created_by, created_at, completed_at
+            RETURNING
+            id,
+            truck_id,
+            origin_location,
+            destination_location,
+            departure_scheduled_at,
+            driver_id,
+            assist_driver_id,
+            status,
+            created_by,
+            created_at,
+            completed_at
             """,
             logger: logger
         )
