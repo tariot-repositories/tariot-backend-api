@@ -26,186 +26,117 @@ struct SensorReadingController {
     }
 
     // MARK: - GET /api/trucks/:truckID/readings/raw
-    // Returns raw readings for the last 1 hour
     func raw(_ req: Request) async throws -> [RawReadingDTO] {
         let truckUUID = try resolvedTruckUUID(req)
 
-    let repo = SensorReadingRepository(
-        pool: req.application.databaseClient.pool,
-        logger: req.logger
-    )
-
-    let readings = try await repo.findRaw(
-        truckUUID: truckUUID
-    )
-
-    let formatter = ISO8601DateFormatter()
-
-    return readings.map { reading in
-        RawReadingDTO(
-        id: reading.id,
-        truckUUID: reading.truckUUID,
-        deliverySlaveDetectionID: reading.deliverySlaveDetectionID,
-        recordedAt: formatter.string(from: reading.recordedAt),
-        temperature: reading.temperature,
-        humidity: reading.humidity,
-        ethylenePPM: reading.ethylenePPM,
-        gasRaw: reading.gasRaw,
-        latitude: reading.latitude,
-        longitude: reading.longitude
-        )
-    }
-    }
-
-    func rawByDetection(
-        req: Request
-    ) async throws -> SlaveReadingsResponseDTO {
-
-    guard let detectionID =
-        req.parameters.get(
-            "detectionID",
-            as: UUID.self
-        )
-    else {
-        throw Abort(
-            .badRequest,
-            reason: "Invalid delivery slave detection ID"
-        )
-    }
-
-    let detectionRepository =
-        DeliverySlaveDetectionRepository(
+        let repo = SensorReadingRepository(
             pool: req.application.databaseClient.pool,
             logger: req.logger
         )
 
-    guard let detection =
-        try await detectionRepository.findByID(
-            detectionID
-        )
-    else {
-        throw Abort(
-            .notFound,
-            reason: "Delivery slave detection not found"
-        )
-    }
+        let readings = try await repo.findRaw(truckUUID: truckUUID)
+        let formatter = ISO8601DateFormatter()
 
-    let repo =
-        SensorReadingRepository(
-            pool: req.application.databaseClient.pool,
-            logger: req.logger
-        )
-
-    let readings =
-        try await repo.findRaw(
-            deliverySlaveDetectionID:
-                detectionID
-        )
-
-    let formatter =
-        ISO8601DateFormatter()
-
-    let responseReadings =
-        readings.map { reading in
+        return readings.map { reading in
             RawReadingDTO(
                 id: reading.id,
                 truckUUID: reading.truckUUID,
-                deliverySlaveDetectionID:
-                    reading.deliverySlaveDetectionID,
-                recordedAt:
-                    formatter.string(
-                        from: reading.recordedAt
-                    ),
-                temperature:
-                    reading.temperature,
-                humidity:
-                    reading.humidity,
-                ethylenePPM:
-                    reading.ethylenePPM,
-                gasRaw:
-                    reading.gasRaw,
-                latitude:
-                    reading.latitude,
-                longitude:
-                    reading.longitude
+                masterID: reading.masterID,
+                slaveID: reading.slaveID,
+                deliverySlaveDetectionID: reading.deliverySlaveDetectionID,
+                recordedAt: formatter.string(from: reading.recordedAt),
+                temperature: reading.temperature,
+                humidity: reading.humidity,
+                ethylenePPM: reading.ethylenePPM,
+                latitude: reading.latitude,
+                longitude: reading.longitude
+            )
+        }
+    }
+
+    // MARK: - GET readings by detection
+    func rawByDetection(req: Request) async throws -> SlaveReadingsResponseDTO {
+        guard let detectionID = req.parameters.get("detectionID", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid delivery slave detection ID")
+        }
+
+        let detectionRepository = DeliverySlaveDetectionRepository(
+            pool: req.application.databaseClient.pool,
+            logger: req.logger
+        )
+
+        guard let detection = try await detectionRepository.findByID(detectionID) else {
+            throw Abort(.notFound, reason: "Delivery slave detection not found")
+        }
+
+        let repo = SensorReadingRepository(
+            pool: req.application.databaseClient.pool,
+            logger: req.logger
+        )
+
+        let readings = try await repo.findRaw(deliverySlaveDetectionID: detectionID)
+        let formatter = ISO8601DateFormatter()
+
+        let responseReadings = readings.map { reading in
+            RawReadingDTO(
+                id: reading.id,
+                truckUUID: reading.truckUUID,
+                masterID: reading.masterID,
+                slaveID: reading.slaveID,
+                deliverySlaveDetectionID: reading.deliverySlaveDetectionID,
+                recordedAt: formatter.string(from: reading.recordedAt),
+                temperature: reading.temperature,
+                humidity: reading.humidity,
+                ethylenePPM: reading.ethylenePPM,
+                latitude: reading.latitude,
+                longitude: reading.longitude
             )
         }
 
-    return SlaveReadingsResponseDTO(
-        masterID: detection.masterID,
-        slaveID: detection.slaveID,
-        readings: responseReadings
-    )
-    }
-
-    func latestByDetection(
-    req: Request
-    ) async throws -> LatestSlaveReadingDTO {
-
-    guard let detectionID =
-        req.parameters.get(
-            "detectionID",
-            as: UUID.self
-        )
-    else {
-        throw Abort(
-            .badRequest,
-            reason: "Invalid delivery slave detection ID"
+        return SlaveReadingsResponseDTO(
+            masterID: detection.masterID,
+            slaveID: detection.slaveID,
+            readings: responseReadings
         )
     }
 
-    let detectionRepository =
-        DeliverySlaveDetectionRepository(
+    // MARK: - GET latest by detection
+    func latestByDetection(req: Request) async throws -> LatestSlaveReadingDTO {
+        guard let detectionID = req.parameters.get("detectionID", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid delivery slave detection ID")
+        }
+
+        let detectionRepository = DeliverySlaveDetectionRepository(
             pool: req.application.databaseClient.pool,
             logger: req.logger
         )
 
-    guard let detection =
-        try await detectionRepository.findByID(
-            detectionID
-        )
-    else {
-        throw Abort(
-            .notFound,
-            reason: "Delivery slave detection not found"
-        )
-    }
+        guard let detection = try await detectionRepository.findByID(detectionID) else {
+            throw Abort(.notFound, reason: "Delivery slave detection not found")
+        }
 
-    let repo =
-        SensorReadingRepository(
+        let repo = SensorReadingRepository(
             pool: req.application.databaseClient.pool,
             logger: req.logger
         )
 
-    guard let reading =
-        try await repo.findLatest(
-            deliverySlaveDetectionID:
-                detectionID
-        )
-    else {
-        throw Abort(
-            .notFound,
-            reason: "No readings found for this slave"
+        guard let reading = try await repo.findLatest(deliverySlaveDetectionID: detectionID) else {
+            throw Abort(.notFound, reason: "No readings found for this slave")
+        }
+
+        return LatestSlaveReadingDTO(
+            masterID: detection.masterID,
+            slaveID: detection.slaveID,
+            reading: LatestReadingDTO(
+                temperature: reading.temperature,
+                humidity: reading.humidity,
+                ethylenePPM: reading.ethylenePPM,
+                latitude: reading.latitude,
+                longitude: reading.longitude,
+                recordedAt: ISO8601DateFormatter().string(from: reading.recordedAt)
+            )
         )
     }
-
-    return LatestSlaveReadingDTO(
-        masterID: detection.masterID,
-        slaveID: detection.slaveID,
-        reading: LatestReadingDTO(
-            temperature: reading.temperature,
-            humidity: reading.humidity,
-            ethylenePPM: reading.ethylenePPM,
-            latitude: reading.latitude,
-            longitude: reading.longitude,
-            recordedAt:
-                ISO8601DateFormatter()
-                    .string(
-                        from: reading.recordedAt
-                    )
-        )
-    )
-}
 
     // MARK: - Private Helpers
     private func resolvedTruckUUID(_ req: Request) throws -> UUID {

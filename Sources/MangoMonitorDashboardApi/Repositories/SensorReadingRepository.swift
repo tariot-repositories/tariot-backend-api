@@ -7,40 +7,25 @@ import Vapor
 struct SensorReadingRepository {
 
     // MARK: - Properties
-
     private let pool: PostgresClient
     private let logger: Logger
 
     // MARK: - Init
-
-    init(
-        pool: PostgresClient,
-        logger: Logger
-    ) {
+    init(pool: PostgresClient, logger: Logger) {
         self.pool = pool
         self.logger = logger
     }
 
     // MARK: - Insert
-
-    /// Inserts a sensor reading.
-    ///
-    /// `truckUUID` is kept because it is still required by the
-    /// current database schema and existing alert/read APIs.
-    ///
-    /// `deliverySlaveDetectionID` is the new relationship introduced
-    /// in Phase 3.1.
     func insert(
         payload: MQTTPayloadDTO,
         truckUUID: UUID,
         deliverySlaveDetectionID: UUID?
-    ) async throws -> (
-        id: UUID,
-        recordedAt: Date
-    ) {
+    ) async throws -> (id: UUID, recordedAt: Date) {
 
         let readingID = UUID()
         let recordedAt = Date()
+        let ppm = GasCalibration.ppm(fromRsRo: payload.rsRo)
 
         try await pool.query(
             """
@@ -52,7 +37,6 @@ struct SensorReadingRepository {
                 temperature,
                 humidity,
                 ethylene_ppm,
-                gas_raw,
                 latitude,
                 longitude
             )
@@ -63,8 +47,7 @@ struct SensorReadingRepository {
                 \(recordedAt),
                 \(payload.temperature),
                 \(payload.humidity),
-                \(payload.ethylene),
-                0,
+                \(ppm),
                 \(payload.latitude),
                 \(payload.longitude)
             )
@@ -72,30 +55,14 @@ struct SensorReadingRepository {
             logger: logger
         )
 
-        return (
-            id: readingID,
-            recordedAt: recordedAt
-        )
+        return (id: readingID, recordedAt: recordedAt)
     }
 
     // MARK: - Smoothed Values by Truck
-    //
-    // Temporary compatibility path.
-    // Phase 3.5 will move alert smoothing to
-    // delivery-slave-detection scope.
-
     func smoothedValues(
         truckUUID: UUID,
-        raw: (
-            temperature: Double,
-            humidity: Double,
-            ethylene: Double
-        )
-    ) async throws -> (
-        temperature: Double,
-        humidity: Double,
-        ethylene: Double
-    ) {
+        raw: (temperature: Double, humidity: Double, ethylene: Double)
+    ) async throws -> (temperature: Double, humidity: Double, ethylene: Double) {
 
         let rows = try await pool.query(
             """
@@ -104,10 +71,7 @@ struct SensorReadingRepository {
                 AVG(humidity),
                 AVG(ethylene_ppm)
             FROM (
-                SELECT
-                    temperature,
-                    humidity,
-                    ethylene_ppm
+                SELECT temperature, humidity, ethylene_ppm
                 FROM sensor_readings
                 WHERE truck_uuid = \(truckUUID)
                 ORDER BY recorded_at DESC
@@ -117,25 +81,11 @@ struct SensorReadingRepository {
             logger: logger
         )
 
-        for try await (
-            temperature,
-            humidity,
-            ethylene
-        ) in rows.decode(
-            (
-                Double?,
-                Double?,
-                Double?
-            ).self
-        ) {
-
+        for try await (temperature, humidity, ethylene) in rows.decode((Double?, Double?, Double?).self) {
             return (
-                temperature:
-                    temperature ?? raw.temperature,
-                humidity:
-                    humidity ?? raw.humidity,
-                ethylene:
-                    ethylene ?? raw.ethylene
+                temperature: temperature ?? raw.temperature,
+                humidity: humidity ?? raw.humidity,
+                ethylene: ethylene ?? raw.ethylene
             )
         }
 
@@ -143,23 +93,10 @@ struct SensorReadingRepository {
     }
 
     // MARK: - Smoothed Values by Detection
-
-    /// New Phase 3 path.
-    ///
-    /// Only readings belonging to one delivery-slave detection
-    /// are included in the smoothing window.
     func smoothedValues(
         deliverySlaveDetectionID: UUID,
-        raw: (
-            temperature: Double,
-            humidity: Double,
-            ethylene: Double
-        )
-    ) async throws -> (
-        temperature: Double,
-        humidity: Double,
-        ethylene: Double
-    ) {
+        raw: (temperature: Double, humidity: Double, ethylene: Double)
+    ) async throws -> (temperature: Double, humidity: Double, ethylene: Double) {
 
         let rows = try await pool.query(
             """
@@ -168,13 +105,9 @@ struct SensorReadingRepository {
                 AVG(humidity),
                 AVG(ethylene_ppm)
             FROM (
-                SELECT
-                    temperature,
-                    humidity,
-                    ethylene_ppm
+                SELECT temperature, humidity, ethylene_ppm
                 FROM sensor_readings
-                WHERE delivery_slave_detection_id =
-                    \(deliverySlaveDetectionID)
+                WHERE delivery_slave_detection_id = \(deliverySlaveDetectionID)
                 ORDER BY recorded_at DESC
                 LIMIT 5
             ) recent
@@ -182,25 +115,11 @@ struct SensorReadingRepository {
             logger: logger
         )
 
-        for try await (
-            temperature,
-            humidity,
-            ethylene
-        ) in rows.decode(
-            (
-                Double?,
-                Double?,
-                Double?
-            ).self
-        ) {
-
+        for try await (temperature, humidity, ethylene) in rows.decode((Double?, Double?, Double?).self) {
             return (
-                temperature:
-                    temperature ?? raw.temperature,
-                humidity:
-                    humidity ?? raw.humidity,
-                ethylene:
-                    ethylene ?? raw.ethylene
+                temperature: temperature ?? raw.temperature,
+                humidity: humidity ?? raw.humidity,
+                ethylene: ethylene ?? raw.ethylene
             )
         }
 
@@ -208,92 +127,68 @@ struct SensorReadingRepository {
     }
 
     // MARK: - Raw Readings by Truck
-    //
-    // Kept for the current REST API while Phase 3 migration
-    // is still in progress.
-
-    func findRaw(
-        truckUUID: UUID
-    ) async throws -> [SensorReading] {
-
+    func findRaw(truckUUID: UUID) async throws -> [SensorReading] {
         let rows = try await pool.query(
             """
             SELECT
-                id,
-                truck_uuid,
-                delivery_slave_detection_id,
-                recorded_at,
-                temperature,
-                humidity,
-                ethylene_ppm,
-                gas_raw,
-                latitude,
-                longitude
-            FROM sensor_readings
-            WHERE truck_uuid = \(truckUUID)
-            ORDER BY recorded_at ASC
+            sr.id,
+            sr.truck_uuid,
+            sr.delivery_slave_detection_id,
+            dsd.master_id,
+            dsd.slave_id,
+            sr.recorded_at,
+            sr.temperature,
+            sr.humidity,
+            sr.ethylene_ppm,
+            sr.latitude,
+            sr.longitude
+            FROM sensor_readings sr
+            JOIN delivery_slave_detection dsd
+                ON dsd.id = sr.delivery_slave_detection_id
+            WHERE sr.truck_uuid = \(truckUUID)
+            ORDER BY sr.recorded_at ASC
             """,
             logger: logger
         )
 
-        return try await decodeReadings(
-            rows
-        )
+        return try await decodeReadings(rows)
     }
 
     // MARK: - Raw Readings by Detection
-
-    func findRaw(
-        deliverySlaveDetectionID: UUID
-    ) async throws -> [SensorReading] {
-
+    func findRaw(deliverySlaveDetectionID: UUID) async throws -> [SensorReading] {
         let rows = try await pool.query(
             """
             SELECT
-                id,
-                truck_uuid,
-                delivery_slave_detection_id,
-                recorded_at,
-                temperature,
-                humidity,
-                ethylene_ppm,
-                gas_raw,
-                latitude,
-                longitude
-            FROM sensor_readings
-            WHERE delivery_slave_detection_id =
-                \(deliverySlaveDetectionID)
-            ORDER BY recorded_at ASC
+            sr.id,
+            sr.truck_uuid,
+            sr.delivery_slave_detection_id,
+            dsd.master_id,
+            dsd.slave_id,
+            sr.recorded_at,
+            sr.temperature,
+            sr.humidity,
+            sr.ethylene_ppm,
+            sr.latitude,
+            sr.longitude
+            FROM sensor_readings sr
+            JOIN delivery_slave_detection dsd
+                ON dsd.id = sr.delivery_slave_detection_id
+            WHERE sr.delivery_slave_detection_id = \(deliverySlaveDetectionID)
+            ORDER BY sr.recorded_at ASC
             """,
             logger: logger
         )
 
-        return try await decodeReadings(
-            rows
-        )
+        return try await decodeReadings(rows)
     }
 
     // MARK: - Latest by Truck
-    //
-    // Kept for the current truck-oriented API.
-
-    func findLatest(
-        truckUUID: UUID
-    ) async throws -> SensorReading? {
-
+    func findLatest(truckUUID: UUID) async throws -> SensorReading? {
         let rows = try await pool.query(
             """
             SELECT
-                id,
-                truck_uuid,
-                delivery_slave_detection_id,
-                recorded_at,
-                temperature,
-                humidity,
-                ethylene_ppm,
-                gas_raw,
-                latitude,
-                longitude
+                id, truck_uuid, delivery_slave_detection_id, recorded_at,
+                temperature, humidity, ethylene_ppm, latitude, longitude
             FROM sensor_readings
             WHERE truck_uuid = \(truckUUID)
             ORDER BY recorded_at DESC
@@ -302,138 +197,66 @@ struct SensorReadingRepository {
             logger: logger
         )
 
-        return try await decodeFirstReading(
-            rows
-        )
+        return try await decodeFirstReading(rows)
     }
 
     // MARK: - Latest by Detection
-
-    func findLatest(
-        deliverySlaveDetectionID: UUID
-    ) async throws -> SensorReading? {
-
+    func findLatest(deliverySlaveDetectionID: UUID) async throws -> SensorReading? {
         let rows = try await pool.query(
             """
             SELECT
-                id,
-                truck_uuid,
-                delivery_slave_detection_id,
-                recorded_at,
-                temperature,
-                humidity,
-                ethylene_ppm,
-                gas_raw,
-                latitude,
-                longitude
+                id, truck_uuid, delivery_slave_detection_id, recorded_at,
+                temperature, humidity, ethylene_ppm, latitude, longitude
             FROM sensor_readings
-            WHERE delivery_slave_detection_id =
-                \(deliverySlaveDetectionID)
+            WHERE delivery_slave_detection_id = \(deliverySlaveDetectionID)
             ORDER BY recorded_at DESC
             LIMIT 1
             """,
             logger: logger
         )
 
-        return try await decodeFirstReading(
-            rows
-        )
+        return try await decodeFirstReading(rows)
     }
 
     // MARK: - Decoding
-
-    private func decodeReadings(
-        _ rows: PostgresRowSequence
-    ) async throws -> [SensorReading] {
-
+    private func decodeReadings(_ rows: PostgresRowSequence) async throws -> [SensorReading] {
         var readings: [SensorReading] = []
 
-        for try await (
-            id,
-            truckUUID,
-            detectionID,
-            recordedAt,
-            temperature,
-            humidity,
-            ethylenePPM,
-            gasRaw,
-            latitude,
-            longitude
-        ) in rows.decode(
-            (
-                UUID,
-                UUID,
-                UUID?,
-                Date,
-                Double,
-                Double,
-                Double,
-                Int,
-                Double,
-                Double
-            ).self
+        for try await (id, truckUUID, detectionID, masterID, slaveID, recordedAt, temperature, humidity, ethylenePPM, latitude, longitude) in rows.decode(
+            (UUID, UUID, UUID?, String, String, Date, Double, Double, Double, Double?, Double?).self
         ) {
-
-            readings.append(
-                SensorReading(
-                    id: id,
-                    truckUUID: truckUUID,
-                    deliverySlaveDetectionID:
-                        detectionID,
-                    recordedAt: recordedAt,
-                    temperature: temperature,
-                    humidity: humidity,
-                    ethylenePPM: ethylenePPM,
-                    gasRaw: Double(gasRaw),
-                    latitude: latitude,
-                    longitude: longitude
-                )
-            )
+            readings.append(SensorReading(
+                id: id,
+                truckUUID: truckUUID,
+                masterID: masterID,
+                slaveID: slaveID,
+                deliverySlaveDetectionID: detectionID,
+                recordedAt: recordedAt,
+                temperature: temperature,
+                humidity: humidity,
+                ethylenePPM: ethylenePPM,
+                latitude: latitude,
+                longitude: longitude
+            ))
         }
 
         return readings
     }
 
-    private func decodeFirstReading(
-        _ rows: PostgresRowSequence
-    ) async throws -> SensorReading? {
-
-        for try await (
-            id,
-            truckUUID,
-            detectionID,
-            recordedAt,
-            temperature,
-            humidity,
-            ethylenePPM,
-            gasRaw,
-            latitude,
-            longitude
-        ) in rows.decode(
-            (
-                UUID,
-                UUID,
-                UUID?,
-                Date,
-                Double,
-                Double,
-                Double,
-                Int,
-                Double,
-                Double
-            ).self
+    private func decodeFirstReading(_ rows: PostgresRowSequence) async throws -> SensorReading? {
+        for try await (id, truckUUID, detectionID, masterID, slaveID, recordedAt, temperature, humidity, ethylenePPM, latitude, longitude) in rows.decode(
+            (UUID, UUID, UUID?, String, String, Date, Double, Double, Double, Double?, Double?).self
         ) {
-
             return SensorReading(
                 id: id,
                 truckUUID: truckUUID,
-                deliverySlaveDetectionID:
-                    detectionID,
+                masterID: masterID,
+                slaveID: slaveID,
+                deliverySlaveDetectionID: detectionID,
                 recordedAt: recordedAt,
                 temperature: temperature,
                 humidity: humidity,
                 ethylenePPM: ethylenePPM,
-                gasRaw: Double(gasRaw),
                 latitude: latitude,
                 longitude: longitude
             )

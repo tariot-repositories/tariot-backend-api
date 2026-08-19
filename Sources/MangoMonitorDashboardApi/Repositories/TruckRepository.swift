@@ -60,38 +60,7 @@ struct TruckRepository {
 
         throw Abort(.badRequest, reason: "Unknown truck_id '\(truckID)'. Register the truck first.")
     }
-    func findLatest(truckUUID: UUID) async throws -> SensorReading? {
-    let rows = try await pool.query(
-        """
-        SELECT id, truck_uuid, recorded_at, temperature, humidity,
-               ethylene_ppm, gas_raw, latitude, longitude
-        FROM sensor_readings
-        WHERE truck_uuid = \(truckUUID)
-        ORDER BY recorded_at DESC
-        LIMIT 1
-        """,
-        logger: logger
-    )
-
-    for try await (id, tUUID, recordedAt, temperature, humidity, ethylenePPM, gasRaw, latitude, longitude) in rows.decode(
-        (UUID, UUID, Date, Double, Double, Double, Int, Double, Double).self
-    ) {
-        return SensorReading(
-            id: id,
-            truckUUID: tUUID,
-            deliverySlaveDetectionID: nil,
-            recordedAt: recordedAt,
-            temperature: temperature,
-            humidity: humidity,
-            ethylenePPM: ethylenePPM,
-            gasRaw: Double(gasRaw),
-            latitude: latitude,
-            longitude: longitude
-        )
-    }
-
-    return nil
-}
+    
 func findByUUID(_ id: String) async throws -> Truck {
     guard let uuid = UUID(uuidString: id) else {
         throw Abort(.badRequest, reason: "Invalid truck UUID format")

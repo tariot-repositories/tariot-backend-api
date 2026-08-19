@@ -54,20 +54,16 @@ struct MQTTService: LifecycleHandler {
     do {
         // Step 1 — smooth the latest readings belonging
         // to this delivery/slave detection.
-        let smoothed =
-            try await sensorReadingRepository
-                .smoothedValues(
-                    deliverySlaveDetectionID:
-                        deliverySlaveDetectionID,
-                    raw: (
-                        temperature:
-                            payload.temperature,
-                        humidity:
-                            payload.humidity,
-                        ethylene:
-                            payload.ethylene
-                    )
-                )
+        let ppm = GasCalibration.ppm(fromRsRo: payload.rsRo)
+
+        let smoothed = try await sensorReadingRepository.smoothedValues(
+            deliverySlaveDetectionID: deliverySlaveDetectionID,
+            raw: (
+                temperature: payload.temperature,
+                humidity: payload.humidity,
+                ethylene: ppm
+            )
+        )
 
         // Step 2 — evaluate temperature
         // and ethylene only.
@@ -171,7 +167,7 @@ struct MQTTService: LifecycleHandler {
                 message: breach.message
             )
 
-            logger.warning("Alert suppressed by cooldown — \(breach.parameter.rawValue) for truck \(truckUUID)")
+            logger.warning("Alert fired — \(breach.severity.rawValue): \(breach.parameter.rawValue) for truck \(truckUUID)")
         }
     } catch {
         logger.error("evaluateAlerts failed: \(String(reflecting: error))")
@@ -226,9 +222,9 @@ private func shouldFireAlert(
             logger.info("MQTTService connected to broker")
 
             try await client.subscribe(to: [
-                .init(topicFilter: "mango-monitor", qos: .atLeastOnce)
+                .init(topicFilter: "M1/+", qos: .atLeastOnce)
             ])
-            logger.info("MQTTService subscribed to topic: mango-monitor")
+            logger.info("MQTTService subscribed to topic: M1/+")
 
             // Listen for incoming messages indefinitely
             for await message in client.messages {
@@ -246,6 +242,8 @@ private func shouldFireAlert(
             logger.warning("MQTTService received non-string payload — skipping")
             return
         }
+        // Debug — log the exact raw payload as received
+        logger.info("MQTTService raw payload: \(raw)")
 
         guard let data = raw.data(using: .utf8) else {
             logger.warning("MQTTService could not convert payload to Data — skipping")
