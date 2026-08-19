@@ -147,7 +147,6 @@ struct DeliveryRepository {
             completed_at
             FROM deliveries
             WHERE driver_id = \(userID)
-            AND status = 'menunggu_konfirmasi_supir'
             ORDER BY created_at DESC
             """,
             logger: logger
